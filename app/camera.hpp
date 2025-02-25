@@ -37,38 +37,6 @@ inline void write_color(std::ostream &out, const Color &pixel_color) {
     out << rbyte << ' ' << gbyte << ' ' << bbyte << '\n';
 }
 
-// Function to process a batch of elements
-template <typename Iterator, typename Func>
-void processBatch(Iterator begin, Iterator end, Func func) {
-    std::for_each(begin, end, func);
-}
-
-// Parallel for_each with controlled thread count
-template <typename Iterator, typename Func>
-void parallelForEach(size_t numThreads, Iterator begin, Iterator end, Func func) {
-    size_t length = std::distance(begin, end);
-    if (length == 0)
-        return;
-
-    // Determine chunk size
-    size_t chunkSize = (length + numThreads - 1) / numThreads;
-    std::vector<std::thread> threads;
-
-    Iterator chunkStart = begin;
-    for (size_t i = 0; i < numThreads && chunkStart != end; ++i) {
-        Iterator chunkEnd =
-            std::next(chunkStart,
-                      std::min(chunkSize, static_cast<size_t>(std::distance(chunkStart, end))));
-
-        threads.emplace_back(processBatch<Iterator, Func>, chunkStart, chunkEnd, func);
-        chunkStart = chunkEnd;
-    }
-
-    // Join all threads
-    for (auto &t : threads) {
-        t.join();
-    }
-}
 
 struct CameraRay {
     Color *output_pixel;
@@ -90,7 +58,7 @@ class Camera {
     int image_width = 100;                  // Rendered image width in pixel count
     int samples_per_pixel = 10;             // Count of random samples for each pixel
     int max_depth = 5;                      // Maximum ray recursion depth
-    int thread_count = 1;                        // Number of threads to use for rendering
+    
     std::string output_file = "output.ppm"; // Output file name
 
     void render(const Hittable &world) {

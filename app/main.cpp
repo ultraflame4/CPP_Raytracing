@@ -25,18 +25,17 @@ int main() {
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 400;
 
-    cam.samples_per_pixel = 50;
-    cam.output_file = "output_quality_debug.ppm";
+    // cam.samples_per_pixel = 50;
+    // cam.output_file = "output_quality_debug.ppm";
 
+    cam.image_width = 800;
+    cam.samples_per_pixel = 200;
+    cam.max_depth = 50;
+    cam.output_file = "output_quality_high.ppm";
 
-    // cam.samples_per_pixel = 800;
-    // cam.max_depth = 50;
-    // cam.output_file = "output_quality_high.ppm";
-
-    cam.thread_count = 4;
+    
 
     auto start = std::chrono::high_resolution_clock::now();
-    std::clog << "Rendering with " << cam.thread_count << " threads\n";
     world.lock();
     cam.render(world);
     world.unlock();
