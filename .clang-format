@@ -1,0 +1,4 @@
+IndentWidth: 4
+AccessModifierOffset: 0
+ColumnLimit: 96
+NamespaceIndentation: All
