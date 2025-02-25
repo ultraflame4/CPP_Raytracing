@@ -27,10 +27,18 @@ int main() {
 
     cam.samples_per_pixel = 50;
     cam.output_file = "output_quality_debug.ppm";
-    cam.render(world);
+    // cam.render(world);
 
-    // cam.samples_per_pixel = 400;
+
+    // cam.samples_per_pixel = 800;
     // cam.max_depth = 50;
     // cam.output_file = "output_quality_high.ppm";
-    // cam.render(world);
+    // cam.thread_count = 2;
+
+    auto start = std::chrono::high_resolution_clock::now();
+    std::clog << "Rendering with " << cam.thread_count << " threads\n";
+    cam.render(world);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::clog << "Elapsed time: " << elapsed.count() << "s\n";
 }

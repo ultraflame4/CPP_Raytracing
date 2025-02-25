@@ -1,10 +1,14 @@
 #pragma once
 
 #include "hittable.hpp"
+#include "material.hpp"
 #include "math.hpp"
 #include "ray.hpp"
-#include "material.hpp"
+#include <algorithm>
+#include <execution>
 #include <fstream>
+#include <numeric>
+#include <vector>
 
 inline double linear_to_gamma(double linear_component) {
     if (linear_component > 0)
@@ -33,6 +37,51 @@ inline void write_color(std::ostream &out, const Color &pixel_color) {
     out << rbyte << ' ' << gbyte << ' ' << bbyte << '\n';
 }
 
+// Function to process a batch of elements
+template <typename Iterator, typename Func>
+void processBatch(Iterator begin, Iterator end, Func func) {
+    std::for_each(begin, end, func);
+}
+
+// Parallel for_each with controlled thread count
+template <typename Iterator, typename Func>
+void parallelForEach(size_t numThreads, Iterator begin, Iterator end, Func func) {
+    size_t length = std::distance(begin, end);
+    if (length == 0)
+        return;
+
+    // Determine chunk size
+    size_t chunkSize = (length + numThreads - 1) / numThreads;
+    std::vector<std::thread> threads;
+
+    Iterator chunkStart = begin;
+    for (size_t i = 0; i < numThreads && chunkStart != end; ++i) {
+        Iterator chunkEnd =
+            std::next(chunkStart,
+                      std::min(chunkSize, static_cast<size_t>(std::distance(chunkStart, end))));
+
+        threads.emplace_back(processBatch<Iterator, Func>, chunkStart, chunkEnd, func);
+        chunkStart = chunkEnd;
+    }
+
+    // Join all threads
+    for (auto &t : threads) {
+        t.join();
+    }
+}
+
+struct CameraRay {
+    Color *output_pixel;
+    int x;
+    int y;
+};
+
+struct CameraRayScatter{
+    Color color;
+    bool should_continue;
+    Ray next;
+};
+
 class Camera {
     public:
     /* Public Camera Parameters Here */
@@ -41,25 +90,103 @@ class Camera {
     int image_width = 100;                  // Rendered image width in pixel count
     int samples_per_pixel = 10;             // Count of random samples for each pixel
     int max_depth = 5;                      // Maximum ray recursion depth
+    int thread_count = 1;                        // Number of threads to use for rendering
     std::string output_file = "output.ppm"; // Output file name
 
     void render(const Hittable &world) {
         initialize();
 
+        // Calculate all the ray instances we need to cast.
+
+        std::vector<Color> pixels(image_height * image_width, Color(0, 0, 0));
+        std::vector<CameraRay> rays;
+        rays.reserve(image_height * image_width);
+
+        for (int j = 0; j < image_height; j++) {
+            for (int i = 0; i < image_width; i++) {
+                auto out_pixel = &pixels[j * image_width + i];
+                rays.push_back(CameraRay(out_pixel, i, j));
+            }
+        }
+
+        std::mutex m;
+
+        int rays_remaining = rays.size();
+        // Simulate the rays
+        parallelForEach(thread_count, rays.begin(), rays.end(), [&](CameraRay &r) {
+            Color pixel_color(0, 0, 0);
+
+            for (int sample = 0; sample < samples_per_pixel; sample++) {
+                // -- SHOOT RAY --
+                Ray ray = get_ray(r.x, r.y, sample);
+                auto next = shoot_ray(ray, world);
+                auto r_color = next.color; // Track color for the current ray
+                for (int d = 1; d < max_depth; d++) {
+                    
+                    if (!next.should_continue) {
+                        break;
+                    }
+                    
+                    next = shoot_ray(next.next, world);
+                    r_color = r_color * next.color; // Accumulate color
+                }
+                // -- END SHOOT RAY --
+                
+                pixel_color += r_color; // Sum color of all samples
+            }
+
+            *r.output_pixel = pixel_color * pixel_samples_scale;
+
+            // m.lock();
+            rays_remaining--;
+            if (rays_remaining % 100 == 0) {
+                m.lock();
+                std::clog << "\rScanlines remaining: " << rays_remaining << std::flush;
+                m.unlock();
+            }
+            // m.unlock();
+        });
+
+        // std::vector<int> rowIndices(image_height);
+
+        // std::iota(rowIndices.begin(), rowIndices.end(), 0);
+
+        // std::vector<std::vector<Color>> imageBuffer(image_height,
+        //                                             std::vector<Color>(image_width));
+
+        // int rowsRemaining = image_height;
+        // std::for_each(
+        //     std::execution::seq, rowIndices.begin(), rowIndices.end(), [&](int &rowIndex) {
+        //         auto row = imageBuffer[rowIndex];
+
+        //         for (int i = 0; i < (int)row.size(); i++) {
+        //             Color pixel_color(0, 0, 0);
+        //             for (int sample = 0; sample < samples_per_pixel; sample++) {
+        //                 Ray r = get_ray(i, rowIndex, sample);
+        //                 pixel_color += ray_color(r, world);
+        //             }
+        //             imageBuffer[rowIndex][i] = pixel_samples_scale * pixel_color;
+        //         }
+        //         rowsRemaining--;
+
+        //         m.lock();
+        //         std::clog << "\rScanlines remaining: " << rowsRemaining << ' ' << std::flush;
+        //         m.unlock();
+        //     });
+        // for (int j = 0; j < image_height; j++) {
+        //     std::clog << "\rScanlines remaining: " << (image_height - j) << ' ' <<
+        //     std::flush;
+
+        // }
+
         std::ofstream output_stream(output_file);
 
         output_stream << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 
+        // Write the pixel color values to the output file.
         for (int j = 0; j < image_height; j++) {
-            std::clog << "\rScanlines remaining: " << (image_height - j) << ' ' << std::flush;
-            for (int i = 0; i < image_width; i++) {
-
-                Color pixel_color(0, 0, 0);
-                for (int sample = 0; sample < samples_per_pixel; sample++) {
-                    Ray r = get_ray(i, j, sample);
-                    pixel_color += ray_color(r, world);
-                }
-                write_color(output_stream, pixel_samples_scale * pixel_color);
+            for (int i = 0; i < image_width; ++i) {
+                write_color(output_stream, pixels[j * image_width + i]);
             }
         }
 
@@ -125,12 +252,8 @@ class Camera {
         return Vec3(random_double() - 0.5, random_double() - 0.5, 0);
     }
 
-    Color ray_color(const Ray &r, const Hittable &world, int current_depth = 0) const {
+    CameraRayScatter shoot_ray(const Ray &r, const Hittable &world) const {
         HitRecord rec;
-
-        if (current_depth > max_depth) {
-            return Color(0, 0, 0);
-        }
 
         if (world.hit(r, Interval(0.0001, infinity), rec)) {
 
@@ -142,15 +265,17 @@ class Camera {
             Ray scattered;
             Color attenuation;
             if (rec.mat->scatter(r, rec, attenuation, scattered)) {
-                return attenuation * ray_color(scattered, world, current_depth + 1);
+                return CameraRayScatter(attenuation, true, scattered);
             }
+
             // If the ray is not scattered, return black. (Fully absorbed)
-            return Color(0, 0, 0);
+            return CameraRayScatter(Color(0, 0, 0), false);
         }
 
         Vec3 unit_direction = unit_vector(r.direction());
         auto a = 0.5 * (unit_direction.y() + 1.0);
-
-        return (1.0 - a) * Color(1.0, 1.0, 1.0) + a * Color(0.5, 0.7, 1.0);
+        
+        auto skyColor = (1.0 - a) * Color(1.0, 1.0, 1.0) + a * Color(0.5, 0.7, 1.0);
+        return CameraRayScatter(skyColor, false);
     }
 };
