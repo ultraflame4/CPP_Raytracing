@@ -28,8 +28,8 @@ int main() {
     // cam.samples_per_pixel = 50;
     // cam.output_file = "output_quality_debug.ppm";
 
-    cam.image_width = 800;
-    cam.samples_per_pixel = 200;
+    cam.image_width = 1920;
+    cam.samples_per_pixel = 500;
     cam.max_depth = 50;
     cam.output_file = "output_quality_high.ppm";
 

@@ -46,8 +46,8 @@ struct CameraRay {
 
 struct CameraRayScatter{
     Color color;
-    bool should_continue;
-    Ray next;
+    bool reflected;
+    Ray ray;
 };
 
 class Camera {
@@ -87,15 +87,16 @@ class Camera {
             for (int sample = 0; sample < samples_per_pixel; sample++) {
                 // -- SHOOT RAY --
                 Ray ray = get_ray(r.x, r.y, sample);
-                auto next = shoot_ray(ray, world);
+                // Yeet and scatter the ray into the world
+                auto next = scatter_ray(ray, world);
                 auto r_color = next.color; // Track color for the current ray
                 for (int d = 1; d < max_depth; d++) {
                     
-                    if (!next.should_continue) {
+                    if (!next.reflected) {
                         break;
                     }
 
-                    next = shoot_ray(next.next, world);
+                    next = scatter_ray(next.ray, world);
                     r_color = r_color * next.color; // Accumulate color
                 }
                 // -- END SHOOT RAY --
@@ -109,7 +110,7 @@ class Camera {
             rays_remaining--;
             if (rays_remaining % 100 == 0) {
                 m.lock();
-                std::clog << "\rScanlines remaining: " << rays_remaining << std::flush;
+                std::clog << "\rRemaining: " << rays_remaining << std::flush;
                 m.unlock();
             }
 
@@ -220,7 +221,14 @@ class Camera {
         return Vec3(random_double() - 0.5, random_double() - 0.5, 0);
     }
 
-    CameraRayScatter shoot_ray(const Ray &r, const Hittable &world) const {
+    /**
+     * @brief Shoots a ray into the world and returns the scattered ray.
+     * 
+     * @param r 
+     * @param world 
+     * @return CameraRayScatter Struct containing color of the ray and reflected ray.
+     */
+    CameraRayScatter scatter_ray(const Ray &r, const Hittable &world) const {
         HitRecord rec;
 
         if (world.hit(r, Interval(0.0001, infinity), rec)) {
