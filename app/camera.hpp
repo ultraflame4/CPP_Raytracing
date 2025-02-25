@@ -113,7 +113,7 @@ class Camera {
 
         int rays_remaining = rays.size();
         // Simulate the rays
-        parallelForEach(thread_count, rays.begin(), rays.end(), [&](CameraRay &r) {
+        std::for_each(std::execution::par_unseq, rays.begin(), rays.end(), [&](CameraRay &r) {
             Color pixel_color(0, 0, 0);
 
             for (int sample = 0; sample < samples_per_pixel; sample++) {
@@ -126,7 +126,7 @@ class Camera {
                     if (!next.should_continue) {
                         break;
                     }
-                    
+
                     next = shoot_ray(next.next, world);
                     r_color = r_color * next.color; // Accumulate color
                 }
@@ -137,14 +137,14 @@ class Camera {
 
             *r.output_pixel = pixel_color * pixel_samples_scale;
 
-            // m.lock();
+
             rays_remaining--;
             if (rays_remaining % 100 == 0) {
                 m.lock();
                 std::clog << "\rScanlines remaining: " << rays_remaining << std::flush;
                 m.unlock();
             }
-            // m.unlock();
+
         });
 
         // std::vector<int> rowIndices(image_height);
