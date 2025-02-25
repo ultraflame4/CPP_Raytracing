@@ -11,9 +11,5 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 set(CMAKE_CXX_STANDARD 23)
 
-find_package(spdlog CONFIG REQUIRED)
-find_package(fmt CONFIG REQUIRED)
-
-
 
 add_subdirectory(app)
